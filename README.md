@@ -16,8 +16,8 @@ pip install garminconnect-aio
 ## Example Usage
 
 ```python
-"""Asynchronous Garmin Connect Python 3 API wrapper."""
 #!/usr/bin/env python3
+"""Asynchronous Garmin Connect Python 3 API wrapper."""
 import asyncio
 import logging
 from datetime import date
@@ -50,7 +50,7 @@ async def async_main():
             # Get users activity summary data
             logger.debug(await client.get_user_summary(today.isoformat()))
 
-            # Get users body comositiono data
+            # Get users body composition data
             logger.debug(await client.get_body_composition(today.isoformat()))
 
             # Get users devices data
