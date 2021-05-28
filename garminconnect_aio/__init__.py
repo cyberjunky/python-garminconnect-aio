@@ -93,7 +93,7 @@ class Garmin:
         response = await self._get_data(URL_BASE + "auth/hostname")
         sso_hostname = response.get("host")
 
-        logger.debug("Login ticket")
+        logger.debug("Get login token")
 
         # Load login page to get login ticket
         params = [
@@ -146,7 +146,7 @@ class Garmin:
             csrf_response = await resp.text()
             url_response = URL(resp.url).human_repr()
 
-        logger.debug("URL: %s", url_response)
+        # logger.debug("URL: %s", url_response)
 
         # Lookup csrf token
         csrf = re.search(
@@ -262,6 +262,18 @@ class Garmin:
             + cdate
         )
         return await self._get_data(url)
+
+    async def get_device_alarms(self):
+        """Combine list of active alarms from all garmin devices."""
+        alarms = []
+        logger.debug("Get device alarms")
+
+        devices = await self.get_devices()
+        for device in devices:
+            device_settings = await self.get_device_settings(device["deviceId"])
+            alarms += device_settings["alarms"]
+
+        return alarms
 
     async def logout(self):
         """Session logout."""
