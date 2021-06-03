@@ -1,6 +1,7 @@
 """Asynchronous Garmin Connect Python 3 API wrapper."""
 import logging
 import re
+from enum import Enum, auto
 
 from aiohttp import ClientResponse, ClientSession, ClientTimeout
 from yarl import URL
@@ -29,6 +30,7 @@ class Garmin:
     async def _check_response(self, resp: ClientResponse):
         """Check the response and throw the appropriate exception if needed."""
 
+        logger.debug("Checking status code: %s", resp.status)
         if resp.status != 200:
             try:
                 response = await resp.json()
@@ -64,7 +66,7 @@ class Garmin:
             GarminConnectConnectionError,
             GarminConnectAuthenticationError,
         ):
-            logger.debug("Session expired, trying relogin")
+            logger.debug("Session expired, trying re-login")
             await self.login()
 
             async with self._websession.request(
@@ -81,7 +83,7 @@ class Garmin:
     async def login(self):
         """Return a requests session, loaded with precious cookies."""
 
-        logger.debug("Login")
+        logger.debug("Login attempt")
 
         headers = {
             "User-Agent": "Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:48.0) Gecko/20100101 Firefox/50.0"
@@ -90,10 +92,13 @@ class Garmin:
         # Define a valid user agent
         self._websession.headers.update(headers)
 
-        response = await self._get_data(URL_BASE + "auth/hostname")
+        url = URL_BASE + "auth/hostname"
+        logger.debug("Requesting sso hostname with url: %s", url)
+
+        response = await self._get_data(url)
         sso_hostname = response.get("host")
 
-        logger.debug("Get login token")
+        logger.debug("Requesting login token with url: %s", URL_LOGIN)
 
         # Load login page to get login ticket
         params = [
@@ -146,8 +151,6 @@ class Garmin:
             csrf_response = await resp.text()
             url_response = URL(resp.url).human_repr()
 
-        # logger.debug("URL: %s", url_response)
-
         # Lookup csrf token
         csrf = re.search(
             r'<input type="hidden" name="_csrf" value="(\w+)" />',
@@ -158,6 +161,7 @@ class Garmin:
         csrf_token = csrf.group(1)
 
         logger.debug("Got CSRF token: %s", csrf_token)
+        logger.debug("Referer: %s", url_response)
 
         # Login/password with login ticket
         data = {
@@ -198,51 +202,52 @@ class Garmin:
         if not response.get("GARMIN-SSO-GUID"):
             raise GarminConnectAuthenticationError(400, "Authentication error")
 
-        logger.debug("Get user infomation")
-        response = await self._get_data(URL_BASE + "currentuser-service/user/info")
+        url = URL_BASE + "currentuser-service/user/info"
+        logger.debug("Requesting user information with url: %s", url)
+        response = await self._get_data(url)
 
         self._display_name = response.get("displayName")
         self._username = response.get("username")
-        logger.debug("Logged in with %s", self._username)
+        logger.debug("Logged in with account: %s", self._username)
 
         return self._username
 
     async def get_devices(self):
         """Return available devices for the current user account."""
 
-        logger.debug("Get devices")
-        return await self._get_data(
-            URL_BASE_PROXY + "device-service/deviceregistration/devices"
-        )
+        url = URL_BASE_PROXY + "device-service/deviceregistration/devices"
+        logger.debug("Requesting devices with url: %s", url)
+
+        return await self._get_data(url)
 
     async def get_device_settings(self, device_id):
         """Return device settings for specific device."""
 
-        logger.debug("Get devices settings")
-        return await self._get_data(
+        url = (
             URL_BASE_PROXY
             + "device-service/deviceservice/device-info/settings/"
             + str(device_id)
         )
+        logger.debug("Requesting device settings with url: %s", url)
+
+        return await self._get_data(url)
 
     async def get_user_summary(self, cdate):
         """Return user activity summary for 'cDate' format 'YYYY-mm-dd'."""
-
-        logger.debug("Get user summary")
 
         url = (
             URL_BASE_PROXY
             + "usersummary-service/usersummary/daily/"
             + self._display_name
-            + "?"
-            + "calendarDate="
+            + "?calendarDate="
             + cdate
         )
+        logger.debug("Requesting user summary with url: %s", url)
 
         response = await self._get_data(url)
 
         if response["privacyProtected"] is True:
-            logger.debug("Session expired, trying relogin")
+            logger.debug("Session expired, trying re-login")
 
             await self.login()
             response = await self._get_data(url)
@@ -252,7 +257,6 @@ class Garmin:
     async def get_body_composition(self, cdate):
         """Return available body composition data for 'cDate' format 'YYYY-mm-dd'."""
 
-        logger.debug("Get body composition")
         url = (
             URL_BASE_PROXY
             + "weight-service/weight/daterangesnapshot"
@@ -261,13 +265,16 @@ class Garmin:
             + "&endDate="
             + cdate
         )
+        logger.debug("Requesting body composition with url: %s", url)
+
         return await self._get_data(url)
 
     async def get_device_alarms(self):
         """Combine list of active alarms from all garmin devices."""
-        alarms = []
-        logger.debug("Get device alarms")
 
+        logger.debug("Gathering device alarms")
+
+        alarms = []
         devices = await self.get_devices()
         for device in devices:
             device_settings = await self.get_device_settings(device["deviceId"])
@@ -278,14 +285,282 @@ class Garmin:
     async def logout(self):
         """Session logout."""
 
-        logger.debug("Logout")
+        url = URL_BASE + "/auth/logout/?url="
+        logger.debug("Logout with url: %s", url)
+
         async with self._websession.request(
             "GET",
-            URL_BASE + "/auth/logout/?url=",
+            url,
             headers=self._websession.headers,
             timeout=self._timeout,
         ) as resp:
             await self._check_response(resp)
+
+    async def get_heart_rates(self, cdate):
+        """Fetch available heart rates data for 'cDate' format 'YYYY-mm-dd'."""
+
+        url = (
+            URL_BASE_PROXY
+            + "wellness-service/wellness/dailyHeartRate/"
+            + self._display_name
+            + "?date="
+            + cdate
+        )
+        logger.debug("Requesting heart rates with url %s", url)
+
+        return await self._get_data(url)
+
+    async def get_sleep_data(self, cdate):
+        """Fetch available sleep data for 'cDate' format 'YYYY-mm-dd'."""
+
+        url = (
+            URL_BASE_PROXY
+            + "wellness-service/wellness/dailySleepData/"
+            + self._display_name
+            + "?date="
+            + cdate
+        )
+        logger.debug("Requesting sleep data with url: %s", url)
+
+        return await self._get_data(url)
+
+    async def get_steps_data(self, cdate):
+        """Fetch available steps data for 'cDate' format 'YYYY-mm-dd'."""
+
+        url = (
+            URL_BASE_PROXY
+            + "wellness-service/wellness/dailySummaryChart/"
+            + self._display_name
+            + "?date="
+            + cdate
+        )
+        logger.debug("Requesting steps data with url: %s", url)
+
+        return await self._get_data(url)
+
+    async def get_activities(self, start=1, limit=1):
+        """Fetch available activities for start en limit."""
+
+        url = (
+            URL_BASE_PROXY
+            + "activitylist-service/activities/search/activities?start="
+            + str(start)
+            + "&limit="
+            + str(limit)
+        )
+        logger.debug("Requesting activities data for start and limit with url: %s", url)
+
+        return await self._get_data(url)
+
+    async def get_activities_by_date(self, startdate, enddate, activitytype):
+        """
+        Fetch available activities between specific dates
+        :param startdate: String in the format YYYY-MM-DD
+        :param enddate: String in the format YYYY-MM-DD
+        :param activitytype: Type of activity you are searching
+                             Possible values are [cycling, running, swimming,
+                             multi_sport, fitness_equipment, hiking, walking, other]
+        :return: list of JSON activities
+        """
+
+        activities = []
+        start = 0
+        limit = 20
+        returndata = True
+        # mimicking the behavior of the web interface that fetches 20 activities at a time
+        # and automatically loads more on scroll
+        if activitytype:
+            activityslug = "&activityType=" + str(activitytype)
+        else:
+            activityslug = ""
+        while returndata:
+            url = (
+                URL_BASE_PROXY
+                + "activitylist-service/activities/search/activities"
+                + "?startDate="
+                + str(startdate)
+                + "&endDate="
+                + str(enddate)
+                + "&start="
+                + str(start)
+                + "&limit="
+                + str(limit)
+                + activityslug
+            )
+            logger.debug("Requesting activities by date with url %s", url)
+            response = await self._get_data(url)
+            if response:
+                activities.extend(response)
+                start = start + limit
+            else:
+                returndata = False
+
+        return activities
+
+    async def get_excercise_sets(self, activity_id):
+        """Fetch excersise sets with id."""
+
+        url = (
+            URL_BASE_PROXY
+            + "activity-service/activity/"
+            + str(activity_id)
+        )
+        logger.debug("Requesting excercise sets with url %s", url)
+
+        return await self._get_data(url)
+
+    async def get_activity_splits(self, activity_id):
+        """Fetch activity splits with id."""
+
+        url = (
+            URL_BASE_PROXY
+            + "activity-service/activity/"
+            + str(activity_id)
+            + "/splits"
+        )
+        logger.debug("Requesting activities splits with url %s", url)
+
+        return await self._get_data(url)
+
+    async def get_activity_split_summaries(self, activity_id):
+        """Fetch activity split summaries with id."""
+
+        url = (
+            URL_BASE_PROXY
+            + "activity-service/activity/"
+            + str(activity_id)
+            + "/split_summaries"
+        )
+        logger.debug("Requesting activities split summaries with url %s", url)
+
+        return await self._get_data(url)
+
+    async def get_activity_weather(self, activity_id):
+        """Fetch activity split summaries with id."""
+
+        url = (
+            URL_BASE_PROXY
+            + "activity-service/activity/"
+            + str(activity_id)
+            + "/weather"
+        )
+        logger.debug("Requesting weather with url %s", url)
+
+        return await self._get_data(url)
+
+    async def get_activity_hr_in_timezones(self, activity_id):
+        """Fetch activity split summaries with id."""
+
+        url = (
+            URL_BASE_PROXY
+            + "activity-service/activity/"
+            + str(activity_id)
+            + "/hrTimeInZones"
+        )
+        logger.debug("Requesting hr time in zones with url %s", url)
+
+        return await self._get_data(url)
+
+    async def get_activity_details(
+        self, activity_id, max_chart_size=2000, max_polyline_size=4000
+    ):
+        """Fetch activity details with id."""
+
+        params = f"maxChartSize={max_chart_size}&maxPolylineSize={max_polyline_size}"
+        url = (
+            URL_BASE_PROXY
+            + "activity-service/activity/"
+            + str(activity_id)
+            + "/details?"
+            + params
+        )
+        logger.debug("Requesting activity details with url %s", url)
+
+        return await self._get_data(url)
+
+    async def get_personal_records(self):
+        """Fetch personal records for person."""
+
+        url = (
+            URL_BASE_PROXY
+            + "personalrecord-service/personalrecord/prs/"
+            + self._display_name
+        )
+        logger.debug("Requesting personal records with url %s", url)
+
+        return await self._get_data(url)
+
+    async def get_device_last_used(self):
+        """Fetch last used garmin device."""
+
+        url = URL_BASE_PROXY + "device-service/deviceservice/mylastused"
+        logger.debug("Requesting last used garmin device with url %s", url)
+
+        return await self._get_data(url)
+
+    async def get_hydration_data(self, cdate):  # cDate = 'YYYY-mm-dd'
+        """Fetch hydration data for 'cDate' format 'YYYY-mm-dd'"""
+
+        url = (
+            URL_BASE_PROXY + "usersummary-service/usersummary/hydration/daily/" + cdate
+        )
+        logger.debug("Requesting hydration data with url %s", url)
+
+        return await self._get_data(url)
+
+    class ActivityDownloadFormat(Enum):
+        """Defines for downloads."""
+        ORIGINAL = auto()
+        TCX = auto()
+        GPX = auto()
+        KML = auto()
+        CSV = auto()
+
+    async def download_activity(self, activity_id, dl_fmt=ActivityDownloadFormat.TCX):
+        """
+        Downloads activity in requested format and returns the raw bytes. For
+        "Original" will return the zip file content, up to user to extract it.
+        "CSV" will return a csv of the splits.
+        """
+
+        urls = {
+            Garmin.ActivityDownloadFormat.ORIGINAL: URL_BASE_PROXY
+            + "download-service/files/activity/"
+            + str(activity_id),
+            Garmin.ActivityDownloadFormat.TCX: URL_BASE_PROXY
+            + "download-service/export/tcx/activity/"
+            + str(activity_id),
+            Garmin.ActivityDownloadFormat.GPX: URL_BASE_PROXY
+            + "download-service/export/gpx/activity/"
+            + str(activity_id),
+            Garmin.ActivityDownloadFormat.KML: URL_BASE_PROXY
+            + "download-service/export/kml/activity/"
+            + str(activity_id),
+            Garmin.ActivityDownloadFormat.CSV: URL_BASE_PROXY
+            + "download-service/export/csv/activity/"
+            + str(activity_id),
+        }
+        if dl_fmt not in urls:
+            raise ValueError(f"Unexpected value {dl_fmt} for dl_fmt")
+        url = urls[dl_fmt]
+        logger.debug("Downloading activity data with url %s", url)
+
+        try:
+            async with self._websession.request(
+                "GET",
+                url,
+                headers=self._websession.headers,
+                timeout=self._timeout,
+            ) as resp:
+                await self._check_response(resp)
+                response = await resp.read()
+        except (
+            GarminConnectConnectionError,
+            GarminConnectAuthenticationError,
+        ):
+            logger.debug("Error occured while downloading activity data")
+
+        return response
 
 
 class ApiException(Exception):
