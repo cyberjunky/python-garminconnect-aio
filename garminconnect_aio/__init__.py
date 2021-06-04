@@ -11,6 +11,9 @@ logger = logging.getLogger(__name__)
 URL_BASE = "https://connect.garmin.com/modern/"
 URL_BASE_PROXY = "https://connect.garmin.com/proxy/"
 URL_LOGIN = "https://sso.garmin.com/sso/login"
+HEADERS = {
+    "User-Agent": "Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:48.0) Gecko/20100101 Firefox/50.0"
+}
 
 
 class Garmin:
@@ -57,7 +60,7 @@ class Garmin:
             async with self._websession.request(
                 "GET",
                 url,
-                headers=self._websession.headers,
+                headers=HEADERS,
                 timeout=self._timeout,
             ) as resp:
                 await self._check_response(resp)
@@ -72,7 +75,7 @@ class Garmin:
             async with self._websession.request(
                 "GET",
                 url,
-                headers=self._websession.headers,
+                headers=HEADERS,
                 timeout=self._timeout,
             ) as resp:
                 await self._check_response(resp)
@@ -84,13 +87,6 @@ class Garmin:
         """Return a requests session, loaded with precious cookies."""
 
         logger.debug("Login attempt")
-
-        headers = {
-            "User-Agent": "Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:48.0) Gecko/20100101 Firefox/50.0"
-        }
-
-        # Define a valid user agent
-        self._websession.headers.update(headers)
 
         url = URL_BASE + "auth/hostname"
         logger.debug("Requesting sso hostname with url: %s", url)
@@ -143,7 +139,7 @@ class Garmin:
         async with self._websession.request(
             "GET",
             URL_LOGIN,
-            headers=headers,
+            headers=HEADERS,
             params=params,
             timeout=self._timeout,
         ) as resp:
@@ -291,7 +287,7 @@ class Garmin:
         async with self._websession.request(
             "GET",
             url,
-            headers=self._websession.headers,
+            headers=HEADERS,
             timeout=self._timeout,
         ) as resp:
             await self._check_response(resp)
@@ -549,7 +545,7 @@ class Garmin:
             async with self._websession.request(
                 "GET",
                 url,
-                headers=self._websession.headers,
+                headers=HEADERS,
                 timeout=self._timeout,
             ) as resp:
                 await self._check_response(resp)
