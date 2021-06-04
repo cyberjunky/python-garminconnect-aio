@@ -22,5 +22,5 @@ setup(
     long_description=readme,
     url="https://github.com/cyberjunky/python-garminconnect-aio",
     packages=["garminconnect_aio"],
-    version="0.1.2",
+    version="0.1.3",
 )

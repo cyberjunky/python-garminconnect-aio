@@ -81,12 +81,16 @@ class Garmin:
                 await self._check_response(resp)
                 response = await resp.json()
 
+        logger.debug("Response: %s", response)
         return response
 
     async def login(self):
         """Return a requests session, loaded with precious cookies."""
 
         logger.debug("Login attempt")
+
+        # Define a valid user agent
+        self._websession.headers.update(HEADERS)
 
         url = URL_BASE + "auth/hostname"
         logger.debug("Requesting sso hostname with url: %s", url)
