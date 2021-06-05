@@ -89,9 +89,6 @@ class Garmin:
 
         logger.debug("Login attempt")
 
-        # Define a valid user agent
-        self._websession.headers.update(HEADERS)
-
         url = URL_BASE + "auth/hostname"
         logger.debug("Requesting sso hostname with url: %s", url)
 
@@ -180,6 +177,7 @@ class Garmin:
             "Connection": "keep-alive",
             "Referer": url_response,
             "Upgrade-Insecure-Requests": "1",
+            "User-Agent": "Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:48.0) Gecko/20100101 Firefox/50.0",
             "Sec-Fetch-Dest": "iframe",
             "Sec-Fetch-Mode": "navigate",
             "Sec-Fetch-Site": "same-origin",
